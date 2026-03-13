@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+
+:root {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+body {
+  background-color: #f8f9ff;
+  color: #111827; /* Questo sostituisce text-gray-900 manualmente per sicurezza */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Effetto di selezione viola */
+::selection {
+  background-color: #ede9fe;
+  color: #4c1d95;
+}
