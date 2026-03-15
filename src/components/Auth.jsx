@@ -1,120 +1,152 @@
 import React, { useState } from 'react';
 import { auth, db } from '../firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signInWithPopup, 
+  GoogleAuthProvider 
+} from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { motion } from 'motion/react';
-import { Mail, Lock, ShieldCheck, User, ArrowRight, UserPlus } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Mail, Lock, ShieldCheck, User, ArrowRight, UserPlus, LogIn } from 'lucide-react';
 
 export default function Auth() {
-  const [isRep, setIsRep] = useState(false);
-  const [isRegistering, setIsRegistering] = useState(false); // Switch tra Login e Registrazione
+  const [isRep, setIsRep] = useState(false); // Toggle Studente / Rappresentante
+  const [mode, setMode] = useState('login'); // 'login' o 'register'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
 
-  // PIN SEGRETO per diventare Rappresentante (Cambialo con quello che vuoi!)
-  const SECRET_REP_PIN = "2024REP"; 
+  // --- CONFIGURAZIONE PIN ---
+  // Questo è il PIN che i rappresentanti devono usare per REGISTRARSI
+  const SECRET_REP_PIN = "12345"; 
 
-  const handleGoogleLogin = async () => {
+  const handleGoogleAuth = async () => {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-    } catch (err) { setError("Errore con Google. Riprova."); }
+    } catch (err) {
+      setError("Errore con l'accesso Google. Riprova.");
+    }
   };
 
-  const handleRepAuth = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPin = pin.trim();
 
-    if (isRegistering) {
-      // --- LOGICA REGISTRAZIONE RAPPRESENTANTE ---
-      if (pin !== SECRET_REP_PIN) {
-        setError("PIN Segreto Errato! Non puoi registrarti come Rappresentante.");
-        return;
-      }
-      try {
-        const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-        // Aggiungo l'utente nel database 'admins' automaticamente
-        await setDoc(doc(db, 'admins', email.toLowerCase().trim()), {
-          uid: userCredential.user.uid,
-          email: email.toLowerCase().trim(),
-          role: 'admin'
-        });
-      } catch (err) {
-        setError("Errore nella registrazione: " + err.message);
-      }
-    } else {
-      // --- LOGICA ACCESSO RAPPRESENTANTE ---
-      try {
-        const adminRef = doc(db, 'admins', email.toLowerCase().trim());
-        const adminSnap = await getDoc(adminRef);
-        if (!adminSnap.exists()) {
-          setError("Questa email non è autorizzata come Rappresentante.");
-          return;
+    try {
+      if (isRep) {
+        // --- LOGICA RAPPRESENTANTE ---
+        if (mode === 'register') {
+          if (cleanPin !== SECRET_REP_PIN) {
+            setError("PIN Segreto non valido. Non puoi creare un account Rappresentante.");
+            return;
+          }
+          const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+          await setDoc(doc(db, 'admins', cleanEmail), {
+            uid: userCredential.user.uid,
+            email: cleanEmail,
+            role: 'admin'
+          });
+        } else {
+          // Accesso Rappresentante: Controlla se è nel database admins
+          const adminSnap = await getDoc(doc(db, 'admins', cleanEmail));
+          if (!adminSnap.exists()) {
+            setError("Accesso negato: questa email non è tra gli amministratori.");
+            return;
+          }
+          await signInWithEmailAndPassword(auth, cleanEmail, password);
         }
-        await signInWithEmailAndPassword(auth, email.trim(), password);
-      } catch (err) {
-        setError("Email o Password errati.");
+      } else {
+        // --- LOGICA STUDENTE ---
+        if (mode === 'register') {
+          await createUserWithEmailAndPassword(auth, cleanEmail, password);
+        } else {
+          await signInWithEmailAndPassword(auth, cleanEmail, password);
+        }
       }
+    } catch (err) {
+      console.error(err);
+      if (err.code === 'auth/email-already-in-use') setError("Email già registrata.");
+      else if (err.code === 'auth/wrong-password') setError("Password errata.");
+      else if (err.code === 'auth/user-not-found') setError("Utente non trovato.");
+      else setError("Errore: controlla i dati e riprova.");
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#f8f9ff] flex items-center justify-center p-6">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md bg-white rounded-[40px] p-10 shadow-2xl border border-violet-50">
+    <div className="min-h-screen bg-[#f8f9ff] flex items-center justify-center p-6 font-sans">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md bg-white rounded-[40px] p-8 md:p-10 shadow-2xl border border-violet-50">
         
-        {/* Switch Studente/Rappresentante */}
+        {/* Switch Principale: Studente / Rappresentante */}
         <div className="flex bg-gray-100 p-1.5 rounded-2xl mb-8">
-          <button onClick={() => {setIsRep(false); setError('');}} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase transition-all ${!isRep ? 'bg-white shadow-sm text-violet-600' : 'text-gray-400'}`}>Studente</button>
-          <button onClick={() => {setIsRep(true); setError('');}} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase transition-all ${isRep ? 'bg-white shadow-sm text-violet-600' : 'text-gray-400'}`}>Rappresentante</button>
+          <button onClick={() => {setIsRep(false); setError(''); setMode('login');}} className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${!isRep ? 'bg-white shadow-sm text-violet-600' : 'text-gray-400'}`}>Studente</button>
+          <button onClick={() => {setIsRep(true); setError(''); setMode('login');}} className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${isRep ? 'bg-white shadow-sm text-violet-600' : 'text-gray-400'}`}>Rappresentante</button>
         </div>
 
-        {error && <div className="mb-6 p-4 bg-red-50 text-red-500 rounded-2xl text-xs font-bold border border-red-100">{error}</div>}
-
-        {!isRep ? (
-          <div className="text-center">
-            <User className="w-12 h-12 text-violet-600 mx-auto mb-4" />
-            <h2 className="text-2xl font-black uppercase mb-2">Area Studenti</h2>
-            <button onClick={handleGoogleLogin} className="w-full py-4 mt-6 bg-white border-2 border-gray-100 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-gray-50 transition-all">
-              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5" alt="G" />
-              Accedi con Google
-            </button>
+        {/* Intestazione Dinamica */}
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 bg-violet-50 rounded-2xl flex items-center justify-center text-violet-600 mx-auto mb-4">
+            {isRep ? <ShieldCheck className="w-8 h-8"/> : <User className="w-8 h-8"/>}
           </div>
-        ) : (
-          <form onSubmit={handleRepAuth} className="space-y-4">
-            <div className="text-center mb-6">
-              <ShieldCheck className="w-12 h-12 text-violet-600 mx-auto mb-2" />
-              <h2 className="text-2xl font-black uppercase">{isRegistering ? 'Nuovo Rappresentante' : 'Area Rappresentanti'}</h2>
-            </div>
-            
-            {/* Campo PIN (Solo per Registrazione) */}
-            {isRegistering && (
-              <div className="relative">
-                <ShieldCheck className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-violet-500" />
-                <input type="text" required placeholder="PIN SEGRETO REGISTRAZIONE" value={pin} onChange={e => setPin(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-violet-50 rounded-2xl focus:outline-violet-600 font-black text-violet-600 placeholder:text-violet-300" />
-              </div>
-            )}
+          <h2 className="text-2xl font-black uppercase text-gray-900 leading-tight">
+            {mode === 'login' ? 'Bentornato' : 'Crea Account'}<br/>
+            <span className="text-violet-600 text-sm">{isRep ? 'Area Rappresentanti' : 'Area Studenti'}</span>
+          </h2>
+        </div>
 
+        {error && <div className="mb-6 p-4 bg-red-50 text-red-500 rounded-2xl text-[11px] font-bold border border-red-100 text-center">{error}</div>}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Campo PIN solo per Registrazione Rappresentante */}
+          {isRep && mode === 'register' && (
             <div className="relative">
-              <Mail className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input type="email" required placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-gray-50 rounded-2xl focus:outline-violet-600" />
+              <ShieldCheck className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-violet-500" />
+              <input type="text" required placeholder="PIN SEGRETO" value={pin} onChange={e => setPin(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-violet-50 border-2 border-violet-100 rounded-2xl focus:border-violet-600 outline-none font-black text-violet-600" />
             </div>
+          )}
 
-            <div className="relative">
-              <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input type="password" required placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-gray-50 rounded-2xl focus:outline-violet-600" />
+          <div className="relative">
+            <Mail className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input type="email" required placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-gray-50 rounded-2xl focus:outline-violet-600 outline-none font-medium" />
+          </div>
+
+          <div className="relative">
+            <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input type="password" required placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-gray-50 rounded-2xl focus:outline-violet-600 outline-none font-medium" />
+          </div>
+
+          <button type="submit" className="w-full py-5 bg-violet-600 text-white rounded-[24px] font-black uppercase tracking-widest shadow-xl shadow-violet-600/20 flex items-center justify-center gap-2 hover:bg-violet-700 active:scale-[0.98] transition-all">
+            {mode === 'login' ? <><LogIn className="w-5 h-5"/> Entra</> : <><UserPlus className="w-5 h-5"/> Registrati</>}
+          </button>
+        </form>
+
+        {/* Pulsante Google (Sempre visibile per Studenti, rimosso per Rep per sicurezza) */}
+        {!isRep && (
+          <>
+            <div className="flex items-center my-6 gap-4">
+              <div className="flex-1 h-px bg-gray-100"></div>
+              <span className="text-[10px] font-black text-gray-300 uppercase">Oppure</span>
+              <div className="flex-1 h-px bg-gray-100"></div>
             </div>
-
-            <button type="submit" className="w-full py-5 bg-violet-600 text-white rounded-[24px] font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-2 hover:bg-violet-700 transition-all">
-              {isRegistering ? <><UserPlus className="w-5 h-5" /> Registrati</> : <><ArrowRight className="w-5 h-5" /> Entra</>}
+            <button onClick={handleGoogleAuth} className="w-full py-4 bg-white border-2 border-gray-100 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-gray-50 transition-all active:scale-[0.98]">
+              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5" alt="G" />
+              Continua con Google
             </button>
-
-            <button type="button" onClick={() => setIsRegistering(!isRegistering)} className="w-full text-center text-xs font-bold text-gray-400 uppercase tracking-tighter hover:text-violet-600">
-              {isRegistering ? "Hai già un account? Accedi" : "Non hai un account? Registrati (Serve PIN)"}
-            </button>
-          </form>
+          </>
         )}
+
+        {/* Switch tra Login e Registrazione */}
+        <button 
+          onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}
+          className="w-full mt-8 text-center text-[10px] font-black text-gray-400 uppercase tracking-widest hover:text-violet-600 transition-colors"
+        >
+          {mode === 'login' ? "Non hai un account? Registrati" : "Hai già un account? Accedi"}
+        </button>
+
       </motion.div>
     </div>
   );
