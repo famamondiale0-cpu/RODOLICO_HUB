@@ -19,7 +19,10 @@ export default function Auth() {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-    } catch (err) { setError("Errore con Google."); }
+    } catch (err) { 
+      setError("Errore con Google. Assicurati di aver aggiunto il dominio su Firebase."); 
+      console.error(err);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -27,7 +30,8 @@ export default function Auth() {
     setError('');
     const cleanEmail = email.trim().toLowerCase();
 
-    if (isRep && pin !== SECRET_REP_PIN) {
+    // CORREZIONE 1: Il controllo del PIN scatta SOLO se è una registrazione
+    if (isRep && mode === 'register' && pin !== SECRET_REP_PIN) {
       setError("PIN Rappresentante errato!");
       return;
     }
@@ -51,6 +55,7 @@ export default function Auth() {
       }
     } catch (err) {
       setError("Credenziali errate o account inesistente.");
+      console.error(err);
     }
   };
 
@@ -58,8 +63,8 @@ export default function Auth() {
     <div className="min-h-screen bg-[#f8f9ff] flex items-center justify-center p-6">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md bg-white rounded-[40px] p-10 shadow-2xl border border-violet-50">
         <div className="flex bg-gray-100 p-1.5 rounded-2xl mb-8">
-          <button onClick={() => {setIsRep(false); setMode('login');}} className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase transition-all ${!isRep ? 'bg-white shadow-sm text-violet-600' : 'text-gray-400'}`}>Studente</button>
-          <button onClick={() => {setIsRep(true); setMode('login');}} className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase transition-all ${isRep ? 'bg-white shadow-sm text-violet-600' : 'text-gray-400'}`}>Rappresentante</button>
+          <button onClick={() => {setIsRep(false); setMode('login'); setError('');}} className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase transition-all ${!isRep ? 'bg-white shadow-sm text-violet-600' : 'text-gray-400'}`}>Studente</button>
+          <button onClick={() => {setIsRep(true); setMode('login'); setError('');}} className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase transition-all ${isRep ? 'bg-white shadow-sm text-violet-600' : 'text-gray-400'}`}>Rappresentante</button>
         </div>
 
         <div className="text-center mb-8">
@@ -72,7 +77,8 @@ export default function Auth() {
         {error && <div className="mb-6 p-4 bg-red-50 text-red-500 rounded-2xl text-[11px] font-bold text-center">{error}</div>}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {isRep && (
+          {/* Il PIN appare solo se sei Rappresentante E ti stai Registrando */}
+          {isRep && mode === 'register' && (
             <div className="relative">
               <ShieldCheck className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-violet-500" />
               <input type="password" required placeholder="PIN SEGRETO" value={pin} onChange={e => setPin(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-violet-50 border-2 border-violet-100 rounded-2xl focus:border-violet-600 outline-none font-black text-violet-600" />
@@ -92,12 +98,12 @@ export default function Auth() {
         </form>
 
         {!isRep && (
-          <button onClick={handleGoogleAuth} className="w-full py-4 mt-6 bg-white border-2 border-gray-100 rounded-2xl font-bold flex items-center justify-center gap-3">
+          <button onClick={handleGoogleAuth} type="button" className="w-full py-4 mt-6 bg-white border-2 border-gray-100 rounded-2xl font-bold flex items-center justify-center gap-3">
             <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5" alt="G" /> Continua con Google
           </button>
         )}
 
-        <button onClick={() => setMode(mode === 'login' ? 'register' : 'login')} className="w-full mt-8 text-center text-[10px] font-black text-gray-400 uppercase tracking-widest">
+        <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }} className="w-full mt-8 text-center text-[10px] font-black text-gray-400 uppercase tracking-widest">
           {mode === 'login' ? "Non hai un account? Registrati" : "Hai già un account? Accedi"}
         </button>
       </motion.div>

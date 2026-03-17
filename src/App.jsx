@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import Auth from './components/Auth';
 
-// Icona Giglio di Firenze stilizzata
 const GiglioIcon = ({ className = "w-6 h-6" }) => (
   <svg viewBox="0 0 100 100" className={`${className} text-violet-600 fill-current`}>
     <path d="M50 10c-5 15-15 20-15 35 0 10 5 15 15 15s15-5 15-15c0-15-10-20-15-35zM30 45c-10 0-15 5-15 15 0 15 15 20 20 30 5-10 10-15 10-25 0-10-5-20 15-20zM70 45c10 0 15 5 15 15 0 15-15 20-20 30-5-10-10-15-10-25 0-10-5-20 15-20z" />
@@ -23,16 +22,13 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState('dashboard');
   
-  // STATI PROFILO OBBLIGATORIO
   const [needsProfile, setNeedsProfile] = useState(false);
   const [profileData, setProfileData] = useState({ nome: '', cognome: '', classe: '' });
   
-  // STATI SPORTELLI
-  const [sportelliStep, setSportelliStep] = useState('choice'); // 'choice', 'prof-pin', 'coming-soon'
+  const [sportelliStep, setSportelliStep] = useState('choice'); 
   const [profPinInput, setProfPinInput] = useState('');
   const [sportelliRole, setSportelliRole] = useState('');
 
-  // STATI CONTENUTI
   const [ideas, setIdeas] = useState([]);
   const [notices, setNotices] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -44,12 +40,10 @@ export default function App() {
       setLoading(true);
       if (u) {
         setUser(u);
-        // 1. Controlla se è Admin
         const adminDoc = await getDoc(doc(db, 'admins', u.email.toLowerCase().trim()));
         const isAdminUser = adminDoc.exists();
         setIsAdmin(isAdminUser);
 
-        // 2. Se non è admin, controlla se ha compilato il profilo
         if (!isAdminUser) {
           const userProfile = await getDoc(doc(db, 'users', u.uid));
           if (!userProfile.exists()) {
@@ -58,10 +52,9 @@ export default function App() {
             setNeedsProfile(false);
           }
         } else {
-          setNeedsProfile(false); // Gli admin non hanno bisogno del profilo studente
+          setNeedsProfile(false);
         }
 
-        // Sottoscrizione dati (Bacheca e Idee)
         onSnapshot(query(collection(db, 'ideas'), orderBy('createdAt', 'desc')), (snap) => {
           setIdeas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
@@ -77,7 +70,6 @@ export default function App() {
     });
   }, []);
 
-  // SALVATAGGIO PROFILO STUDENTE
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
     if (!profileData.nome || !profileData.cognome || !profileData.classe) return;
@@ -97,7 +89,6 @@ export default function App() {
     }
   };
 
-  // LOGICA PIN PROFESSORI (SPORTELLI)
   const handleProfPinSubmit = (e) => {
     e.preventDefault();
     if (profPinInput === '56789') {
@@ -109,7 +100,6 @@ export default function App() {
     }
   };
 
-  // LOGICA INVIO IDEE
   const submitIdea = async (e) => {
     e.preventDefault();
     let authorName = "Studente Anonimo";
@@ -136,7 +126,27 @@ export default function App() {
     setShowForm(false);
   };
 
-  // LOGICA INVIO AVVISI (SOLO ADMIN)
+  // CORREZIONE 2: Logica per far votare le idee agli studenti
+  const handleVote = async (ideaId, type, currentUpvotes = [], currentDownvotes = []) => {
+    const ref = doc(db, 'ideas', ideaId);
+    const hasUpvoted = currentUpvotes.includes(user.uid);
+    const hasDownvoted = currentDownvotes.includes(user.uid);
+    
+    if (type === 'up') {
+      if (hasUpvoted) await updateDoc(ref, { upvotes: arrayRemove(user.uid) });
+      else { 
+        await updateDoc(ref, { upvotes: arrayUnion(user.uid) }); 
+        if (hasDownvoted) await updateDoc(ref, { downvotes: arrayRemove(user.uid) }); 
+      }
+    } else {
+      if (hasDownvoted) await updateDoc(ref, { downvotes: arrayRemove(user.uid) });
+      else { 
+        await updateDoc(ref, { downvotes: arrayUnion(user.uid) }); 
+        if (hasUpvoted) await updateDoc(ref, { upvotes: arrayRemove(user.uid) }); 
+      }
+    }
+  };
+
   const submitNotice = async (e) => {
     e.preventDefault();
     if (!isAdmin) return;
@@ -158,7 +168,6 @@ export default function App() {
 
   if (!user) return <Auth />;
 
-  // SCHERMATA MURO: PROFILO OBBLIGATORIO
   if (needsProfile && !isAdmin) {
     return (
       <div className="min-h-screen bg-[#f8f9ff] flex items-center justify-center p-6">
@@ -187,7 +196,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#f8f9ff] flex flex-col font-sans">
-      {/* NAVBAR */}
       <nav className="bg-white/80 backdrop-blur-xl border-b border-violet-50 px-6 py-4 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-4 cursor-pointer" onClick={() => setCurrentView('dashboard')}>
@@ -213,7 +221,6 @@ export default function App() {
 
         {currentView === 'dashboard' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {/* CARD ATTIVE */}
             <motion.div whileHover={{y:-5}} onClick={() => setCurrentView('bacheca')} className="cursor-pointer bg-white p-8 rounded-[40px] shadow-xl shadow-violet-100/50 border border-violet-50 group">
               <div className="w-14 h-14 bg-violet-600 rounded-2xl flex items-center justify-center text-white mb-6 group-hover:scale-110 transition-transform"><Bell /></div>
               <h3 className="text-2xl font-black text-gray-900 uppercase">Bacheca</h3>
@@ -229,7 +236,6 @@ export default function App() {
               <h3 className="text-2xl font-black text-gray-900 uppercase">Sportelli</h3>
             </motion.div>
 
-            {/* CARD IN ARRIVO */}
             {[
               { title: 'Tornei Scolastici', icon: Trophy, color: 'bg-rose-500' },
               { title: 'Dentro la Scuola', icon: School, color: 'bg-blue-500' },
@@ -246,7 +252,6 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA SPORTELLI */}
         {currentView === 'sportelli' && (
           <div className="max-w-3xl mx-auto">
             {sportelliStep === 'choice' && (
@@ -287,7 +292,6 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA BACHECA (Invariata ma pulita) */}
         {currentView === 'bacheca' && (
           <div className="max-w-4xl mx-auto space-y-8">
             <div className="flex justify-between items-center">
@@ -322,7 +326,6 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA IDEE (Invariata ma pulita) */}
         {currentView === 'idee' && (
           <div className="max-w-4xl mx-auto space-y-8">
             <div className="flex justify-between items-center">
@@ -345,11 +348,18 @@ export default function App() {
             <div className="grid gap-6">
               {ideas.map(i => (
                 <div key={i.id} className="bg-white p-6 rounded-[32px] shadow-sm border border-gray-100 flex gap-6">
+                  
+                  {/* CORREZIONE 3: I tasti dei voti sono collegati alla funzione */}
                   <div className="flex flex-col items-center gap-2 bg-gray-50 p-3 rounded-2xl min-w-[60px]">
-                    <button onClick={() => {/* Logica upvote */}} className="text-gray-400 hover:text-emerald-500"><ThumbsUp className="w-5 h-5"/></button>
-                    <span className="font-black text-xl">{i.upvotes?.length - i.downvotes?.length || 0}</span>
-                    <button onClick={() => {/* Logica downvote */}} className="text-gray-400 hover:text-red-500"><ThumbsDown className="w-5 h-5"/></button>
+                    <button onClick={() => handleVote(i.id, 'up', i.upvotes, i.downvotes)} className={`hover:text-emerald-500 transition-colors ${i.upvotes?.includes(user?.uid) ? 'text-emerald-500' : 'text-gray-400'}`}>
+                      <ThumbsUp className="w-5 h-5"/>
+                    </button>
+                    <span className="font-black text-xl">{(i.upvotes?.length || 0) - (i.downvotes?.length || 0)}</span>
+                    <button onClick={() => handleVote(i.id, 'down', i.upvotes, i.downvotes)} className={`hover:text-red-500 transition-colors ${i.downvotes?.includes(user?.uid) ? 'text-red-500' : 'text-gray-400'}`}>
+                      <ThumbsDown className="w-5 h-5"/>
+                    </button>
                   </div>
+
                   <div className="flex-1">
                     <div className="flex justify-between items-start mb-2">
                       <h4 className="text-xl font-black uppercase text-gray-900 leading-tight">{i.title}</h4>
