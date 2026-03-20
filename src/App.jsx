@@ -100,6 +100,15 @@ export default function App() {
     }
   };
 
+ await addDoc(collection(db, 'ideas'), {
+  ...newIdea,
+  authorId: user.uid,
+  authorName,
+  upvotes: [],
+  downvotes: [],
+  approvalStatus: 'pending',  // ← AGGIUNGI QUESTA RIGA
+  createdAt: serverTimestamp()
+});
   const submitIdea = async (e) => {
     e.preventDefault();
     let authorName = "Studente Anonimo";
@@ -145,6 +154,18 @@ export default function App() {
       }
     }
   };
+  const handleVote = async (ideaId, type, currentUpvotes = [], currentDownvotes = []) => {
+  // ... codice esistente ...
+};
+
+// ← AGGIUNGI QUI (dopo handleVote):
+const handleApprovalDecision = async (ideaId, decision) => {
+  const ref = doc(db, 'ideas', ideaId);
+  await updateDoc(ref, { 
+    approvalStatus: decision,
+    approvedAt: serverTimestamp()
+  });
+};
 
   const submitNotice = async (e) => {
     e.preventDefault();
@@ -552,7 +573,49 @@ export default function App() {
                   onChange={e => setNewIdea({...newIdea, desc: e.target.value})} 
                   className="w-full p-4 bg-gradient-to-r from-gray-50 to-gray-50 border border-gray-200 rounded-xl min-h-[120px] focus:outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all resize-none"
                 />
-                <div className="flex items-center justify-between pt-2">
+                <div <div className="flex-1">
+  <div className="flex justify-between items-start mb-3">
+    <h4 className="text-xl font-black uppercase text-gray-900 leading-tight">{i.title}</h4>
+    {i.approvalStatus && (
+      <span className={`text-xs font-black px-3 py-1 rounded-full ${
+        i.approvalStatus === 'approved' ? 'bg-green-100 text-green-600' : 
+        i.approvalStatus === 'rejected' ? 'bg-red-100 text-red-600' : 
+        'bg-yellow-100 text-yellow-600'
+      }`}>
+        {i.approvalStatus === 'approved' ? '✅ APPROVATA' : 
+         i.approvalStatus === 'rejected' ? '❌ RIFIUTATA' : 
+         '⏳ IN ATTESA'}
+      </span>
+    )}
+  </div>
+  <p className="text-gray-600 text-sm mb-4 leading-relaxed">{i.desc}</p>
+  
+  {/* ← AGGIUNGI QUESTI BOTTONI QUI */}
+  {isAdmin && (
+    <div className="flex gap-2 mb-4">
+      <motion.button 
+        whileHover={{ scale: 1.05 }}
+        onClick={() => handleApprovalDecision(i.id, 'approved')}
+        className="px-4 py-2 bg-green-500 text-white rounded-lg font-bold uppercase text-xs"
+      >
+        ✅ Approva
+      </motion.button>
+      <motion.button 
+        whileHover={{ scale: 1.05 }}
+        onClick={() => handleApprovalDecision(i.id, 'rejected')}
+        className="px-4 py-2 bg-red-500 text-white rounded-lg font-bold uppercase text-xs"
+      >
+        ❌ Rifiuta
+      </motion.button>
+    </div>
+  )}
+  
+  <div className="flex items-center gap-2">
+    <div className="w-6 h-6 bg-gradient-to-br from-yellow-100 to-yellow-50 rounded-full flex items-center justify-center text-[8px] font-black text-yellow-600 uppercase shadow-sm">S</div>
+    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Postato da: <span className="text-yellow-600 font-black">{i.authorName}</span></span>
+  </div>
+</div>
+                className="flex items-center justify-between pt-2">
                   <label className="flex items-center gap-3 text-xs font-black text-gray-600 uppercase cursor-pointer hover:text-yellow-600 transition-colors">
                     <input 
                       type="checkbox" 
