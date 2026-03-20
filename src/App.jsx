@@ -65,7 +65,7 @@ const App = () => {
                     <li key={idea.id}>
                         <h2>{idea.title}</h2>
                         <p>{idea.description}</p>
-                        {user && user.isAdmin && (
+                        {user && user.francioniroberto09-dotcom && (
                             <div>
                                 <button 
                                     onClick={() => handleApprovalDecision(idea.id, 'approve')}
