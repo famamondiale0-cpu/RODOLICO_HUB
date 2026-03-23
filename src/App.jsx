@@ -120,13 +120,23 @@ export default function App() {
       authorName,
       upvotes: [],
       downvotes: [],
+      // AGGIUNTA: Se sei admin entra già approvata, altrimenti va in sala d'attesa (pending)
+      status: isAdmin ? 'approved' : 'pending',
       createdAt: serverTimestamp()
     });
     setNewIdea({ title: '', desc: '', anonymous: false });
     setShowForm(false);
   };
 
-  // CORREZIONE 2: Logica per far votare le idee agli studenti
+  // NUOVE FUNZIONI PER APPROVARE O RIFIUTARE IDEE
+  const handleApproveIdea = async (ideaId) => {
+    await updateDoc(doc(db, 'ideas', ideaId), { status: 'approved' });
+  };
+
+  const handleRejectIdea = async (ideaId) => {
+    await updateDoc(doc(db, 'ideas', ideaId), { status: 'rejected' });
+  };
+
   const handleVote = async (ideaId, type, currentUpvotes = [], currentDownvotes = []) => {
     const ref = doc(db, 'ideas', ideaId);
     const hasUpvoted = currentUpvotes.includes(user.uid);
@@ -193,6 +203,13 @@ export default function App() {
       </div>
     );
   }
+
+  // AGGIUNTA: Filtriamo le idee in base allo status e al ruolo (Admin vs Studente)
+  const visibleIdeas = ideas.filter(i => {
+    const status = i.status || 'approved'; // Retrocompatibilità per idee vecchie
+    if (isAdmin) return status !== 'rejected'; // I rappresentanti vedono quelle approvate e quelle in attesa
+    return status === 'approved' || i.authorId === user?.uid; // Lo studente vede le approvate e le PROPRIE (anche se in attesa/rifiutate)
+  });
 
   return (
     <div className="min-h-screen bg-[#f8f9ff] flex flex-col font-sans">
@@ -341,37 +358,69 @@ export default function App() {
                     <input type="checkbox" checked={newIdea.anonymous} onChange={e => setNewIdea({...newIdea, anonymous: e.target.checked})} className="w-5 h-5 accent-yellow-500" />
                     Pubblica in Anonimo
                   </label>
-                  <button type="submit" className="px-10 py-4 bg-yellow-500 text-white rounded-xl font-black uppercase tracking-widest shadow-lg">Invia</button>
+                  <button type="submit" className="px-10 py-4 bg-yellow-500 text-white rounded-xl font-black uppercase tracking-widest shadow-lg">Invia {isAdmin ? '' : 'per approvazione'}</button>
                 </div>
               </form>
             )}
+            
             <div className="grid gap-6">
-              {ideas.map(i => (
-                <div key={i.id} className="bg-white p-6 rounded-[32px] shadow-sm border border-gray-100 flex gap-6">
-                  
-                  {/* CORREZIONE 3: I tasti dei voti sono collegati alla funzione */}
-                  <div className="flex flex-col items-center gap-2 bg-gray-50 p-3 rounded-2xl min-w-[60px]">
-                    <button onClick={() => handleVote(i.id, 'up', i.upvotes, i.downvotes)} className={`hover:text-emerald-500 transition-colors ${i.upvotes?.includes(user?.uid) ? 'text-emerald-500' : 'text-gray-400'}`}>
-                      <ThumbsUp className="w-5 h-5"/>
-                    </button>
-                    <span className="font-black text-xl">{(i.upvotes?.length || 0) - (i.downvotes?.length || 0)}</span>
-                    <button onClick={() => handleVote(i.id, 'down', i.upvotes, i.downvotes)} className={`hover:text-red-500 transition-colors ${i.downvotes?.includes(user?.uid) ? 'text-red-500' : 'text-gray-400'}`}>
-                      <ThumbsDown className="w-5 h-5"/>
-                    </button>
-                  </div>
+              {visibleIdeas.map(i => {
+                const status = i.status || 'approved'; // Gestione stato dinamico
+                return (
+                  <div key={i.id} className={`bg-white p-6 rounded-[32px] shadow-sm border flex gap-6 ${status === 'pending' ? 'border-yellow-300 opacity-90' : status === 'rejected' ? 'border-red-300 opacity-70' : 'border-gray-100'}`}>
+                    
+                    {/* Blocco Voti o Icona Stato */}
+                    <div className="flex flex-col items-center justify-center gap-2 bg-gray-50 p-3 rounded-2xl min-w-[60px]">
+                      {status === 'approved' ? (
+                        <>
+                          <button onClick={() => handleVote(i.id, 'up', i.upvotes, i.downvotes)} className={`hover:text-emerald-500 transition-colors ${i.upvotes?.includes(user?.uid) ? 'text-emerald-500' : 'text-gray-400'}`}>
+                            <ThumbsUp className="w-5 h-5"/>
+                          </button>
+                          <span className="font-black text-xl">{(i.upvotes?.length || 0) - (i.downvotes?.length || 0)}</span>
+                          <button onClick={() => handleVote(i.id, 'down', i.upvotes, i.downvotes)} className={`hover:text-red-500 transition-colors ${i.downvotes?.includes(user?.uid) ? 'text-red-500' : 'text-gray-400'}`}>
+                            <ThumbsDown className="w-5 h-5"/>
+                          </button>
+                        </>
+                      ) : status === 'pending' ? (
+                        <span className="text-2xl" title="In attesa">⏳</span>
+                      ) : (
+                        <span className="text-2xl" title="Rifiutata">❌</span>
+                      )}
+                    </div>
 
-                  <div className="flex-1">
-                    <div className="flex justify-between items-start mb-2">
-                      <h4 className="text-xl font-black uppercase text-gray-900 leading-tight">{i.title}</h4>
-                    </div>
-                    <p className="text-gray-600 text-sm mb-4 leading-relaxed">{i.desc}</p>
-                    <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 bg-yellow-100 rounded-full flex items-center justify-center text-[8px] font-black text-yellow-600 uppercase">S</div>
-                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Postato da: <span className="text-yellow-600">{i.authorName}</span></span>
+                    <div className="flex-1">
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className={`text-xl font-black uppercase leading-tight ${status === 'rejected' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{i.title}</h4>
+                        {/* Etichette di stato */}
+                        {status === 'pending' && <span className="bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">In approvazione</span>}
+                        {status === 'rejected' && <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">Rifiutata</span>}
+                      </div>
+                      
+                      <p className={`text-sm mb-4 leading-relaxed ${status === 'rejected' ? 'text-red-400 font-bold' : 'text-gray-600'}`}>
+                        {status === 'rejected' ? "Idea rifiutata dai Rappresentanti o non conforme al regolamento. Proponine un'altra!" : i.desc}
+                      </p>
+                      
+                      <div className="flex items-center gap-2">
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-black uppercase ${status === 'rejected' ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-600'}`}>S</div>
+                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Postato da: <span className={status === 'rejected' ? 'text-red-500' : 'text-yellow-600'}>{i.authorName}</span></span>
+                      </div>
+
+                      {/* Tasti esclusivi per l'Admin quando un'idea è "pending" */}
+                      {isAdmin && status === 'pending' && (
+                        <div className="mt-4 pt-4 border-t border-gray-100 flex gap-3">
+                          <button onClick={() => handleApproveIdea(i.id)} className="flex-1 py-2 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-colors">Apprezza e Pubblica</button>
+                          <button onClick={() => handleRejectIdea(i.id)} className="flex-1 py-2 bg-red-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-colors">Rifiuta Idea</button>
+                        </div>
+                      )}
+
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
+              
+              {visibleIdeas.length === 0 && (
+                <p className="text-center text-gray-400 font-bold mt-10">Nessuna idea da mostrare al momento.</p>
+              )}
             </div>
           </div>
         )}
