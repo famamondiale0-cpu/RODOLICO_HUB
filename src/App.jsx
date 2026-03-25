@@ -19,7 +19,7 @@ const GiglioIcon = ({ className = "w-6 h-6" }) => (
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [currentUserData, setCurrentUserData] = useState(null); // NUOVO: Salva i dati profilo dello studente
+  const [currentUserData, setCurrentUserData] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState('dashboard');
@@ -27,7 +27,6 @@ export default function App() {
   const [needsProfile, setNeedsProfile] = useState(false);
   const [profileData, setProfileData] = useState({ nome: '', cognome: '', classe: '' });
   
-  // STATI SPORTELLI
   const [sportelliStep, setSportelliStep] = useState('choice'); 
   const [profPinInput, setProfPinInput] = useState('');
   const [sportelli, setSportelli] = useState([]);
@@ -57,17 +56,14 @@ export default function App() {
             setNeedsProfile(true);
           } else {
             setNeedsProfile(false);
-            setCurrentUserData(userProfile.data()); // Salviamo i dati per poterli usare nelle prenotazioni
+            setCurrentUserData(userProfile.data());
           }
         } else {
           setNeedsProfile(false);
         }
 
-        // Listener Bacheca e Idee
         onSnapshot(query(collection(db, 'ideas'), orderBy('createdAt', 'desc')), (snap) => setIdeas(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
         onSnapshot(query(collection(db, 'notices'), orderBy('createdAt', 'desc')), (snap) => setNotices(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-        
-        // Listener Sportelli
         onSnapshot(query(collection(db, 'sportelli'), orderBy('createdAt', 'desc')), (snap) => setSportelli(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
       } else {
@@ -100,7 +96,6 @@ export default function App() {
     }
   };
 
-  // ---- FUNZIONI SPORTELLI ----
   const handleProfPinSubmit = (e) => {
     e.preventDefault();
     if (profPinInput === '56789') {
@@ -141,7 +136,6 @@ export default function App() {
     setBookingNote('');
   };
 
-  // ---- FUNZIONI IDEE & BACHECA ----
   const submitIdea = async (e) => {
     e.preventDefault();
     let authorName = "Studente Anonimo";
@@ -253,6 +247,21 @@ export default function App() {
               <div className="w-14 h-14 bg-emerald-500 rounded-2xl flex items-center justify-center text-white mb-6 group-hover:scale-110 transition-transform"><GraduationCap /></div>
               <h3 className="text-2xl font-black text-gray-900 uppercase">Sportelli</h3>
             </motion.div>
+
+            {/* SEZIONI IN ARRIVO RIPRISTINATE */}
+            {[
+              { title: 'Tornei Scolastici', icon: Trophy, color: 'bg-rose-500' },
+              { title: 'Dentro la Scuola', icon: School, color: 'bg-blue-500' },
+              { title: 'Forum Libero', icon: MessageSquare, color: 'bg-gray-400' }
+            ].map((item, idx) => (
+              <div key={idx} className="relative bg-white p-8 rounded-[40px] border border-gray-100 opacity-60">
+                <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] rounded-[40px] z-10 flex items-center justify-center">
+                  <span className="bg-gray-900 text-white px-4 py-1.5 rounded-full font-black text-[9px] uppercase tracking-widest shadow-lg">In Arrivo</span>
+                </div>
+                <div className={`w-14 h-14 ${item.color} rounded-2xl flex items-center justify-center text-white mb-6`}><item.icon /></div>
+                <h3 className="text-2xl font-black text-gray-400 uppercase">{item.title}</h3>
+              </div>
+            ))}
           </div>
         )}
 
@@ -273,7 +282,6 @@ export default function App() {
               </div>
             )}
 
-            {/* SEZIONE LOG-IN PROFESSORE */}
             {sportelliStep === 'prof-pin' && (
               <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-md mx-auto bg-white p-10 rounded-[40px] shadow-2xl border border-violet-100">
                 <div className="text-center mb-8">
@@ -289,7 +297,6 @@ export default function App() {
               </motion.div>
             )}
 
-            {/* DASHBOARD PROFESSORE */}
             {sportelliStep === 'prof-dashboard' && (
               <div className="space-y-8">
                 <div className="flex justify-between items-center bg-white p-6 rounded-3xl shadow-sm border border-emerald-50">
@@ -339,7 +346,6 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* LISTA PRENOTAZIONI PER IL DOCENTE */}
                       <div className="bg-gray-50 p-6 rounded-2xl">
                         <h4 className="text-xs font-black uppercase text-gray-400 mb-4 tracking-widest border-b border-gray-200 pb-2">Studenti Prenotati ed Esigenze</h4>
                         {s.prenotazioni?.length === 0 ? (
@@ -361,7 +367,6 @@ export default function App() {
               </div>
             )}
 
-            {/* BACHECA SPORTELLI PER STUDENTI */}
             {sportelliStep === 'studente' && (
               <div className="space-y-6">
                 <div className="text-center mb-10">
@@ -391,7 +396,6 @@ export default function App() {
                             </div>
                           </div>
                           
-                          {/* BOTTONI PRENOTAZIONE */}
                           <div className="flex items-center gap-4">
                             <div className="text-center px-4">
                               <span className="block text-2xl font-black text-gray-900">{s.prenotazioni?.length || 0} <span className="text-lg text-gray-400">/ {s.maxStudenti}</span></span>
@@ -412,7 +416,6 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* BOX RIASSUNTO PRENOTAZIONE EFFETTUATA */}
                         {isBooked && (
                           <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 flex items-start gap-3">
                             <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
@@ -423,7 +426,6 @@ export default function App() {
                           </div>
                         )}
 
-                        {/* FORM INLINE DI PRENOTAZIONE */}
                         {bookingSportelloId === s.id && !isBooked && (
                           <div className="bg-gray-50 p-6 rounded-2xl mt-4 border border-emerald-200">
                             <label className="block text-sm font-black text-gray-900 uppercase mb-2">Su cosa hai difficoltà?</label>
@@ -446,7 +448,6 @@ export default function App() {
         )}
 
         {currentView === 'bacheca' && (
-          // ... [IL CODICE BACHECA RESTA INVARIATO]
           <div className="max-w-4xl mx-auto space-y-8">
             <div className="flex justify-between items-center">
               <h2 className="text-3xl font-black uppercase text-gray-900">Bacheca</h2>
@@ -481,7 +482,6 @@ export default function App() {
         )}
 
         {currentView === 'idee' && (
-          // ... [IL CODICE IDEE RESTA INVARIATO]
           <div className="max-w-4xl mx-auto space-y-8">
             <div className="flex justify-between items-center">
               <h2 className="text-3xl font-black uppercase text-gray-900">Idee e Proposte</h2>
