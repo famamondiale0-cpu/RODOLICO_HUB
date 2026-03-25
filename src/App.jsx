@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db } from './firebase';
-import { onAuthStateChanged, signOut, reload } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, addDoc, updateDoc, arrayUnion, arrayRemove, serverTimestamp } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   LogOut, Bell, Lightbulb, MessageSquare, ShieldCheck, 
   User, ThumbsUp, ThumbsDown, ArrowLeft, Send, 
-  ChevronRight, Trophy, School, GraduationCap, KeyRound, BookOpen 
+  ChevronRight, Trophy, School, GraduationCap, KeyRound, 
+  BookOpen, Calendar, MapPin, Users, CheckCircle
 } from 'lucide-react';
 import Auth from './components/Auth';
 
@@ -18,6 +19,7 @@ const GiglioIcon = ({ className = "w-6 h-6" }) => (
 
 export default function App() {
   const [user, setUser] = useState(null);
+  const [currentUserData, setCurrentUserData] = useState(null); // NUOVO: Salva i dati profilo dello studente
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState('dashboard');
@@ -25,9 +27,14 @@ export default function App() {
   const [needsProfile, setNeedsProfile] = useState(false);
   const [profileData, setProfileData] = useState({ nome: '', cognome: '', classe: '' });
   
+  // STATI SPORTELLI
   const [sportelliStep, setSportelliStep] = useState('choice'); 
   const [profPinInput, setProfPinInput] = useState('');
-  const [sportelliRole, setSportelliRole] = useState('');
+  const [sportelli, setSportelli] = useState([]);
+  const [showSportelloForm, setShowSportelloForm] = useState(false);
+  const [newSportello, setNewSportello] = useState({ prof: '', materia: '', aula: '', dataOra: '', maxStudenti: 10 });
+  const [bookingSportelloId, setBookingSportelloId] = useState(null);
+  const [bookingNote, setBookingNote] = useState('');
 
   const [ideas, setIdeas] = useState([]);
   const [notices, setNotices] = useState([]);
@@ -50,21 +57,23 @@ export default function App() {
             setNeedsProfile(true);
           } else {
             setNeedsProfile(false);
+            setCurrentUserData(userProfile.data()); // Salviamo i dati per poterli usare nelle prenotazioni
           }
         } else {
           setNeedsProfile(false);
         }
 
-        onSnapshot(query(collection(db, 'ideas'), orderBy('createdAt', 'desc')), (snap) => {
-          setIdeas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
-        onSnapshot(query(collection(db, 'notices'), orderBy('createdAt', 'desc')), (snap) => {
-          setNotices(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
+        // Listener Bacheca e Idee
+        onSnapshot(query(collection(db, 'ideas'), orderBy('createdAt', 'desc')), (snap) => setIdeas(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+        onSnapshot(query(collection(db, 'notices'), orderBy('createdAt', 'desc')), (snap) => setNotices(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+        
+        // Listener Sportelli
+        onSnapshot(query(collection(db, 'sportelli'), orderBy('createdAt', 'desc')), (snap) => setSportelli(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
       } else {
         setUser(null);
         setIsAdmin(false);
+        setCurrentUserData(null);
       }
       setLoading(false);
     });
@@ -75,104 +84,102 @@ export default function App() {
     if (!profileData.nome || !profileData.cognome || !profileData.classe) return;
     
     try {
-      await setDoc(doc(db, 'users', user.uid), {
+      const newData = {
         nome: profileData.nome.trim(),
         cognome: profileData.cognome.trim(),
         classe: profileData.classe.toUpperCase().trim(),
         email: user.email,
         role: 'student',
         createdAt: serverTimestamp()
-      });
+      };
+      await setDoc(doc(db, 'users', user.uid), newData);
+      setCurrentUserData(newData);
       setNeedsProfile(false);
     } catch (err) {
       alert("Errore durante il salvataggio. Riprova.");
     }
   };
 
+  // ---- FUNZIONI SPORTELLI ----
   const handleProfPinSubmit = (e) => {
     e.preventDefault();
     if (profPinInput === '56789') {
-      setSportelliRole('prof');
-      setSportelliStep('coming-soon');
+      setSportelliStep('prof-dashboard');
+      setProfPinInput('');
     } else {
       alert('PIN errato! Accesso negato.');
       setProfPinInput('');
     }
   };
 
+  const handleCreateSportello = async (e) => {
+    e.preventDefault();
+    await addDoc(collection(db, 'sportelli'), {
+      ...newSportello,
+      maxStudenti: parseInt(newSportello.maxStudenti),
+      prenotazioni: [],
+      createdAt: serverTimestamp()
+    });
+    setNewSportello({ prof: '', materia: '', aula: '', dataOra: '', maxStudenti: 10 });
+    setShowSportelloForm(false);
+  };
+
+  const handleBookSportello = async (sportelloId) => {
+    if (!bookingNote.trim()) return alert("Devi specificare l'argomento su cui hai difficoltà!");
+    
+    const studenteInfo = {
+      uid: user.uid,
+      nome: `${currentUserData?.nome || 'Studente'} ${currentUserData?.cognome || ''} (${currentUserData?.classe || ''})`,
+      note: bookingNote
+    };
+
+    await updateDoc(doc(db, 'sportelli', sportelloId), {
+      prenotazioni: arrayUnion(studenteInfo)
+    });
+    
+    setBookingSportelloId(null);
+    setBookingNote('');
+  };
+
+  // ---- FUNZIONI IDEE & BACHECA ----
   const submitIdea = async (e) => {
     e.preventDefault();
     let authorName = "Studente Anonimo";
     if (!newIdea.anonymous) {
-      if (isAdmin) {
-        authorName = "Rappresentante";
-      } else {
-        const uDoc = await getDoc(doc(db, 'users', user.uid));
-        if (uDoc.exists()) {
-          const d = uDoc.data();
-          authorName = `${d.nome} ${d.cognome} (${d.classe})`;
-        }
-      }
+      if (isAdmin) authorName = "Rappresentante";
+      else if (currentUserData) authorName = `${currentUserData.nome} ${currentUserData.cognome} (${currentUserData.classe})`;
     }
     await addDoc(collection(db, 'ideas'), {
-      ...newIdea,
-      authorId: user.uid,
-      authorName,
-      upvotes: [],
-      downvotes: [],
-      // AGGIUNTA: Se sei admin entra già approvata, altrimenti va in sala d'attesa (pending)
-      status: isAdmin ? 'approved' : 'pending',
-      createdAt: serverTimestamp()
+      ...newIdea, authorId: user.uid, authorName, upvotes: [], downvotes: [],
+      status: isAdmin ? 'approved' : 'pending', createdAt: serverTimestamp()
     });
-    setNewIdea({ title: '', desc: '', anonymous: false });
-    setShowForm(false);
+    setNewIdea({ title: '', desc: '', anonymous: false }); setShowForm(false);
   };
 
-  // NUOVE FUNZIONI PER APPROVARE O RIFIUTARE IDEE
-  const handleApproveIdea = async (ideaId) => {
-    await updateDoc(doc(db, 'ideas', ideaId), { status: 'approved' });
-  };
-
-  const handleRejectIdea = async (ideaId) => {
-    await updateDoc(doc(db, 'ideas', ideaId), { status: 'rejected' });
-  };
+  const handleApproveIdea = async (ideaId) => await updateDoc(doc(db, 'ideas', ideaId), { status: 'approved' });
+  const handleRejectIdea = async (ideaId) => await updateDoc(doc(db, 'ideas', ideaId), { status: 'rejected' });
 
   const handleVote = async (ideaId, type, currentUpvotes = [], currentDownvotes = []) => {
     const ref = doc(db, 'ideas', ideaId);
-    const hasUpvoted = currentUpvotes.includes(user.uid);
-    const hasDownvoted = currentDownvotes.includes(user.uid);
-    
+    const hasUp = currentUpvotes.includes(user.uid); const hasDown = currentDownvotes.includes(user.uid);
     if (type === 'up') {
-      if (hasUpvoted) await updateDoc(ref, { upvotes: arrayRemove(user.uid) });
-      else { 
-        await updateDoc(ref, { upvotes: arrayUnion(user.uid) }); 
-        if (hasDownvoted) await updateDoc(ref, { downvotes: arrayRemove(user.uid) }); 
-      }
+      if (hasUp) await updateDoc(ref, { upvotes: arrayRemove(user.uid) });
+      else { await updateDoc(ref, { upvotes: arrayUnion(user.uid) }); if (hasDown) await updateDoc(ref, { downvotes: arrayRemove(user.uid) }); }
     } else {
-      if (hasDownvoted) await updateDoc(ref, { downvotes: arrayRemove(user.uid) });
-      else { 
-        await updateDoc(ref, { downvotes: arrayUnion(user.uid) }); 
-        if (hasUpvoted) await updateDoc(ref, { upvotes: arrayRemove(user.uid) }); 
-      }
+      if (hasDown) await updateDoc(ref, { downvotes: arrayRemove(user.uid) });
+      else { await updateDoc(ref, { downvotes: arrayUnion(user.uid) }); if (hasUp) await updateDoc(ref, { upvotes: arrayRemove(user.uid) }); }
     }
   };
 
   const submitNotice = async (e) => {
-    e.preventDefault();
-    if (!isAdmin) return;
-    await addDoc(collection(db, 'notices'), {
-      ...newNotice,
-      createdAt: serverTimestamp()
-    });
-    setNewNotice({ title: '', category: 'Circolare', content: '' });
-    setShowForm(false);
+    e.preventDefault(); if (!isAdmin) return;
+    await addDoc(collection(db, 'notices'), { ...newNotice, createdAt: serverTimestamp() });
+    setNewNotice({ title: '', category: 'Circolare', content: '' }); setShowForm(false);
   };
 
   if (loading) return (
     <div className="min-h-screen bg-[#f8f9ff] flex items-center justify-center">
-      <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity }}>
-        <GiglioIcon className="w-12 h-12" />
-      </motion.div>
+      <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity }}><GiglioIcon className="w-12 h-12" /></motion.div>
     </div>
   );
 
@@ -182,33 +189,27 @@ export default function App() {
     return (
       <div className="min-h-screen bg-[#f8f9ff] flex items-center justify-center p-6">
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md bg-white rounded-[40px] p-10 shadow-2xl text-center border border-violet-100">
-          <div className="w-16 h-16 bg-violet-50 rounded-2xl flex items-center justify-center text-violet-600 mx-auto mb-6">
-            <User className="w-8 h-8" />
-          </div>
+          <div className="w-16 h-16 bg-violet-50 rounded-2xl flex items-center justify-center text-violet-600 mx-auto mb-6"><User className="w-8 h-8" /></div>
           <h2 className="text-3xl font-black uppercase text-gray-900 mb-2">Quasi fatto!</h2>
           <p className="text-gray-400 font-bold text-xs uppercase mb-8 tracking-widest">Completa il tuo profilo studente</p>
-          
           <form onSubmit={handleProfileSubmit} className="space-y-4">
             <input type="text" required placeholder="Nome" value={profileData.nome} onChange={e => setProfileData({...profileData, nome: e.target.value})} className="w-full px-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:border-violet-600 transition-all font-medium" />
             <input type="text" required placeholder="Cognome" value={profileData.cognome} onChange={e => setProfileData({...profileData, cognome: e.target.value})} className="w-full px-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:border-violet-600 transition-all font-medium" />
             <input type="text" required placeholder="Classe (es. 4G)" maxLength={3} value={profileData.classe} onChange={e => setProfileData({...profileData, classe: e.target.value})} className="w-full px-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:border-violet-600 transition-all font-black uppercase text-center text-xl" />
-            
             <button type="submit" className="w-full py-5 bg-violet-600 text-white rounded-[24px] font-black uppercase tracking-widest shadow-xl shadow-violet-200 hover:bg-violet-700 transition-all flex items-center justify-center gap-2">
               Avanza <ChevronRight className="w-5 h-5" />
             </button>
           </form>
-          
           <button onClick={() => signOut(auth)} className="mt-8 text-[10px] font-black text-red-400 uppercase tracking-widest">Esci dall'account</button>
         </motion.div>
       </div>
     );
   }
 
-  // AGGIUNTA: Filtriamo le idee in base allo status e al ruolo (Admin vs Studente)
   const visibleIdeas = ideas.filter(i => {
-    const status = i.status || 'approved'; // Retrocompatibilità per idee vecchie
-    if (isAdmin) return status !== 'rejected'; // I rappresentanti vedono quelle approvate e quelle in attesa
-    return status === 'approved' || i.authorId === user?.uid; // Lo studente vede le approvate e le PROPRIE (anche se in attesa/rifiutate)
+    const status = i.status || 'approved';
+    if (isAdmin) return status !== 'rejected';
+    return status === 'approved' || i.authorId === user?.uid;
   });
 
   return (
@@ -252,38 +253,27 @@ export default function App() {
               <div className="w-14 h-14 bg-emerald-500 rounded-2xl flex items-center justify-center text-white mb-6 group-hover:scale-110 transition-transform"><GraduationCap /></div>
               <h3 className="text-2xl font-black text-gray-900 uppercase">Sportelli</h3>
             </motion.div>
-
-            {[
-              { title: 'Tornei Scolastici', icon: Trophy, color: 'bg-rose-500' },
-              { title: 'Dentro la Scuola', icon: School, color: 'bg-blue-500' },
-              { title: 'Forum Libero', icon: MessageSquare, color: 'bg-gray-400' }
-            ].map((item, idx) => (
-              <div key={idx} className="relative bg-white p-8 rounded-[40px] border border-gray-100 opacity-60">
-                <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] rounded-[40px] z-10 flex items-center justify-center">
-                  <span className="bg-gray-900 text-white px-4 py-1.5 rounded-full font-black text-[9px] uppercase tracking-widest shadow-lg">In Arrivo</span>
-                </div>
-                <div className={`w-14 h-14 ${item.color} rounded-2xl flex items-center justify-center text-white mb-6`}><item.icon /></div>
-                <h3 className="text-2xl font-black text-gray-400 uppercase">{item.title}</h3>
-              </div>
-            ))}
           </div>
         )}
 
         {currentView === 'sportelli' && (
-          <div className="max-w-3xl mx-auto">
+          <div className="max-w-4xl mx-auto">
             {sportelliStep === 'choice' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-10">
-                <button onClick={() => { setSportelliRole('studente'); setSportelliStep('coming-soon'); }} className="p-10 bg-white rounded-[40px] shadow-xl border-2 border-transparent hover:border-emerald-500 transition-all group">
+                <button onClick={() => { setSportelliStep('studente'); }} className="p-10 bg-white rounded-[40px] shadow-xl border-2 border-transparent hover:border-emerald-500 transition-all group text-center">
                   <User className="w-16 h-16 mx-auto mb-4 text-emerald-500 group-hover:scale-110 transition-transform" />
-                  <span className="block font-black uppercase text-xl text-gray-900">Sono uno Studente</span>
+                  <span className="block font-black uppercase text-xl text-gray-900">Area Studenti</span>
+                  <span className="block text-xs text-gray-400 font-bold mt-2 uppercase">Prenota uno sportello</span>
                 </button>
-                <button onClick={() => setSportelliStep('prof-pin')} className="p-10 bg-white rounded-[40px] shadow-xl border-2 border-transparent hover:border-violet-500 transition-all group">
+                <button onClick={() => setSportelliStep('prof-pin')} className="p-10 bg-white rounded-[40px] shadow-xl border-2 border-transparent hover:border-violet-500 transition-all group text-center">
                   <KeyRound className="w-16 h-16 mx-auto mb-4 text-violet-500 group-hover:scale-110 transition-transform" />
-                  <span className="block font-black uppercase text-xl text-gray-900">Sono un Professore</span>
+                  <span className="block font-black uppercase text-xl text-gray-900">Area Docenti</span>
+                  <span className="block text-xs text-gray-400 font-bold mt-2 uppercase">Gestisci i tuoi sportelli</span>
                 </button>
               </div>
             )}
 
+            {/* SEZIONE LOG-IN PROFESSORE */}
             {sportelliStep === 'prof-pin' && (
               <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-md mx-auto bg-white p-10 rounded-[40px] shadow-2xl border border-violet-100">
                 <div className="text-center mb-8">
@@ -292,24 +282,171 @@ export default function App() {
                   <p className="text-gray-400 font-bold text-xs uppercase mt-2">Inserisci il PIN di gestione</p>
                 </div>
                 <form onSubmit={handleProfPinSubmit} className="space-y-4">
-                  <input type="password" placeholder="•••••" value={profPinInput} onChange={e => setProfPinInput(e.target.value)} className="w-full p-6 bg-gray-50 rounded-2xl text-center text-3xl font-black tracking-[0.5em] focus:outline-violet-600" maxLength={5} autoFocus />
-                  <button type="submit" className="w-full py-5 bg-violet-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl">Verifica</button>
-                  <button type="button" onClick={() => setSportelliStep('choice')} className="w-full text-xs font-black text-gray-400 uppercase">Indietro</button>
+                  <input type="password" placeholder="•••••" value={profPinInput} onChange={e => setProfPinInput(e.target.value)} className="w-full p-6 bg-gray-50 rounded-2xl text-center text-3xl font-black tracking-[0.5em] focus:outline-violet-600 outline-none transition-colors border border-transparent focus:border-violet-100" maxLength={5} autoFocus />
+                  <button type="submit" className="w-full py-5 bg-violet-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl">Verifica PIN</button>
+                  <button type="button" onClick={() => setSportelliStep('choice')} className="w-full text-xs font-black text-gray-400 uppercase pt-4 hover:text-violet-600">Indietro</button>
                 </form>
               </motion.div>
             )}
 
-            {sportelliStep === 'coming-soon' && (
-              <div className="text-center py-20 bg-white rounded-[40px] border border-dashed border-emerald-200">
-                <BookOpen className="w-20 h-20 text-emerald-200 mx-auto mb-6" />
-                <h2 className="text-4xl font-black uppercase text-gray-900">In Arrivo</h2>
-                <p className="text-gray-400 font-bold uppercase tracking-widest text-sm mt-2">Il modulo {sportelliRole} è in fase di sviluppo</p>
+            {/* DASHBOARD PROFESSORE */}
+            {sportelliStep === 'prof-dashboard' && (
+              <div className="space-y-8">
+                <div className="flex justify-between items-center bg-white p-6 rounded-3xl shadow-sm border border-emerald-50">
+                  <div>
+                    <h2 className="text-2xl font-black uppercase text-gray-900 flex items-center gap-3">
+                      <GraduationCap className="w-8 h-8 text-emerald-500" /> Area Gestione Docenti
+                    </h2>
+                    <p className="text-xs text-gray-500 font-bold uppercase mt-1">Crea e monitora le prenotazioni</p>
+                  </div>
+                  <button onClick={() => setShowSportelloForm(!showSportelloForm)} className="px-6 py-3 bg-emerald-500 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-600 transition-colors">
+                    {showSportelloForm ? 'Chiudi Form' : '+ Crea Sportello'}
+                  </button>
+                </div>
+
+                {showSportelloForm && (
+                  <form onSubmit={handleCreateSportello} className="bg-white p-8 rounded-[32px] shadow-xl border-t-8 border-emerald-500 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <input type="text" required placeholder="Tuo Nome (es. Prof. Rossi)" value={newSportello.prof} onChange={e => setNewSportello({...newSportello, prof: e.target.value})} className="p-4 bg-gray-50 rounded-xl font-bold outline-none focus:ring-2 focus:ring-emerald-200" />
+                      <input type="text" required placeholder="Materia (es. Italiano)" value={newSportello.materia} onChange={e => setNewSportello({...newSportello, materia: e.target.value})} className="p-4 bg-gray-50 rounded-xl font-bold outline-none focus:ring-2 focus:ring-emerald-200" />
+                      <input type="text" required placeholder="Aula (es. Laboratorio 3)" value={newSportello.aula} onChange={e => setNewSportello({...newSportello, aula: e.target.value})} className="p-4 bg-gray-50 rounded-xl font-bold outline-none focus:ring-2 focus:ring-emerald-200" />
+                      <input type="text" required placeholder="Giorno e Ora (es. Lunedì 14:30)" value={newSportello.dataOra} onChange={e => setNewSportello({...newSportello, dataOra: e.target.value})} className="p-4 bg-gray-50 rounded-xl font-bold outline-none focus:ring-2 focus:ring-emerald-200" />
+                      <div className="flex flex-col md:col-span-2 gap-2">
+                        <label className="text-xs font-black uppercase text-gray-400">Posti massimi disponibili</label>
+                        <input type="number" required min="1" max="50" value={newSportello.maxStudenti} onChange={e => setNewSportello({...newSportello, maxStudenti: e.target.value})} className="w-32 p-4 bg-gray-50 rounded-xl font-black text-center text-xl text-emerald-600 outline-none" />
+                      </div>
+                    </div>
+                    <button type="submit" className="w-full mt-6 py-4 bg-emerald-500 text-white rounded-xl font-black uppercase tracking-widest shadow-lg hover:bg-emerald-600 transition-all">Pubblica Sportello</button>
+                  </form>
+                )}
+
+                <div className="space-y-6">
+                  {sportelli.length === 0 ? <p className="text-center text-gray-400 font-bold mt-10">Nessuno sportello attivo.</p> : sportelli.map(s => (
+                    <div key={s.id} className="bg-white p-8 rounded-[32px] shadow-sm border border-gray-100 relative overflow-hidden">
+                      <div className="flex justify-between items-start mb-6">
+                        <div>
+                          <span className="text-[10px] font-black uppercase bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full tracking-widest">{s.materia}</span>
+                          <h3 className="text-2xl font-black uppercase text-gray-900 mt-2">{s.prof}</h3>
+                          <div className="flex gap-4 mt-2 text-sm font-bold text-gray-500">
+                            <span className="flex items-center gap-1"><Calendar className="w-4 h-4"/> {s.dataOra}</span>
+                            <span className="flex items-center gap-1"><MapPin className="w-4 h-4"/> Aula {s.aula}</span>
+                          </div>
+                        </div>
+                        <div className="text-center bg-gray-50 p-4 rounded-2xl">
+                          <Users className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
+                          <span className="text-xl font-black text-gray-900">{s.prenotazioni?.length || 0}</span>
+                          <span className="text-xs font-bold text-gray-400"> / {s.maxStudenti}</span>
+                        </div>
+                      </div>
+
+                      {/* LISTA PRENOTAZIONI PER IL DOCENTE */}
+                      <div className="bg-gray-50 p-6 rounded-2xl">
+                        <h4 className="text-xs font-black uppercase text-gray-400 mb-4 tracking-widest border-b border-gray-200 pb-2">Studenti Prenotati ed Esigenze</h4>
+                        {s.prenotazioni?.length === 0 ? (
+                          <p className="text-sm text-gray-500 italic">Ancora nessuna prenotazione.</p>
+                        ) : (
+                          <ul className="space-y-3">
+                            {s.prenotazioni?.map((p, idx) => (
+                              <li key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-1">
+                                <span className="font-black text-gray-900 uppercase text-sm">{p.nome}</span>
+                                <span className="text-sm text-gray-600"><strong>Difficoltà su:</strong> {p.note}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* BACHECA SPORTELLI PER STUDENTI */}
+            {sportelliStep === 'studente' && (
+              <div className="space-y-6">
+                <div className="text-center mb-10">
+                  <h2 className="text-3xl font-black uppercase text-gray-900">Sportelli Disponibili</h2>
+                  <p className="text-gray-400 font-bold uppercase text-xs mt-2 tracking-widest">Prenota il tuo posto e segnala l'argomento</p>
+                </div>
+
+                <div className="grid gap-6">
+                  {sportelli.length === 0 ? <p className="text-center text-gray-400 font-bold mt-10">Nessuno sportello disponibile al momento.</p> : sportelli.map(s => {
+                    
+                    const isBooked = s.prenotazioni?.some(p => p.uid === user.uid);
+                    const isFull = (s.prenotazioni?.length || 0) >= s.maxStudenti;
+                    const bookingData = s.prenotazioni?.find(p => p.uid === user.uid);
+
+                    return (
+                      <div key={s.id} className={`bg-white p-8 rounded-[32px] shadow-sm border ${isBooked ? 'border-emerald-300' : 'border-gray-100'}`}>
+                        <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-6">
+                          <div>
+                            <div className="flex items-center gap-3 mb-2">
+                              <span className="text-[10px] font-black uppercase bg-gray-100 text-gray-600 px-3 py-1 rounded-full tracking-widest">{s.materia}</span>
+                              {isBooked && <span className="text-[10px] font-black uppercase bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full tracking-widest flex items-center gap-1"><CheckCircle className="w-3 h-3"/> Prenotato</span>}
+                            </div>
+                            <h3 className="text-2xl font-black uppercase text-gray-900">{s.prof}</h3>
+                            <div className="flex gap-4 mt-2 text-sm font-bold text-gray-500">
+                              <span className="flex items-center gap-1"><Calendar className="w-4 h-4"/> {s.dataOra}</span>
+                              <span className="flex items-center gap-1"><MapPin className="w-4 h-4"/> Aula {s.aula}</span>
+                            </div>
+                          </div>
+                          
+                          {/* BOTTONI PRENOTAZIONE */}
+                          <div className="flex items-center gap-4">
+                            <div className="text-center px-4">
+                              <span className="block text-2xl font-black text-gray-900">{s.prenotazioni?.length || 0} <span className="text-lg text-gray-400">/ {s.maxStudenti}</span></span>
+                              <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Posti</span>
+                            </div>
+                            
+                            {!isBooked && !isFull && bookingSportelloId !== s.id && (
+                              <button onClick={() => setBookingSportelloId(s.id)} className="px-6 py-4 bg-emerald-500 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200">
+                                Prenotati
+                              </button>
+                            )}
+                            
+                            {!isBooked && isFull && (
+                              <button disabled className="px-6 py-4 bg-gray-100 text-gray-400 rounded-2xl font-black uppercase text-xs tracking-widest cursor-not-allowed">
+                                Pieno
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* BOX RIASSUNTO PRENOTAZIONE EFFETTUATA */}
+                        {isBooked && (
+                          <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 flex items-start gap-3">
+                            <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="text-xs font-black text-emerald-800 uppercase tracking-widest mb-1">Il tuo argomento richiesto:</p>
+                              <p className="text-sm font-medium text-emerald-700">{bookingData?.note}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* FORM INLINE DI PRENOTAZIONE */}
+                        {bookingSportelloId === s.id && !isBooked && (
+                          <div className="bg-gray-50 p-6 rounded-2xl mt-4 border border-emerald-200">
+                            <label className="block text-sm font-black text-gray-900 uppercase mb-2">Su cosa hai difficoltà?</label>
+                            <p className="text-xs text-gray-500 font-medium mb-3">Spiega brevemente al professore l'argomento (es. "Analisi logica" o "Non ho capito le derivate").</p>
+                            <textarea autoFocus value={bookingNote} onChange={(e) => setBookingNote(e.target.value)} placeholder="Scrivi qui l'argomento..." className="w-full p-4 bg-white rounded-xl border border-gray-200 focus:border-emerald-500 outline-none min-h-[100px] mb-4" />
+                            <div className="flex gap-3">
+                              <button onClick={() => handleBookSportello(s.id)} className="flex-1 py-3 bg-emerald-500 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-600 transition-colors">Conferma Prenotazione</button>
+                              <button onClick={() => {setBookingSportelloId(null); setBookingNote('');}} className="px-6 py-3 bg-white text-gray-500 border border-gray-200 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-gray-50">Annulla</button>
+                            </div>
+                          </div>
+                        )}
+
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
         )}
 
         {currentView === 'bacheca' && (
+          // ... [IL CODICE BACHECA RESTA INVARIATO]
           <div className="max-w-4xl mx-auto space-y-8">
             <div className="flex justify-between items-center">
               <h2 className="text-3xl font-black uppercase text-gray-900">Bacheca</h2>
@@ -344,6 +481,7 @@ export default function App() {
         )}
 
         {currentView === 'idee' && (
+          // ... [IL CODICE IDEE RESTA INVARIATO]
           <div className="max-w-4xl mx-auto space-y-8">
             <div className="flex justify-between items-center">
               <h2 className="text-3xl font-black uppercase text-gray-900">Idee e Proposte</h2>
@@ -365,11 +503,10 @@ export default function App() {
             
             <div className="grid gap-6">
               {visibleIdeas.map(i => {
-                const status = i.status || 'approved'; // Gestione stato dinamico
+                const status = i.status || 'approved'; 
                 return (
                   <div key={i.id} className={`bg-white p-6 rounded-[32px] shadow-sm border flex gap-6 ${status === 'pending' ? 'border-yellow-300 opacity-90' : status === 'rejected' ? 'border-red-300 opacity-70' : 'border-gray-100'}`}>
                     
-                    {/* Blocco Voti o Icona Stato */}
                     <div className="flex flex-col items-center justify-center gap-2 bg-gray-50 p-3 rounded-2xl min-w-[60px]">
                       {status === 'approved' ? (
                         <>
@@ -391,7 +528,6 @@ export default function App() {
                     <div className="flex-1">
                       <div className="flex justify-between items-start mb-2">
                         <h4 className={`text-xl font-black uppercase leading-tight ${status === 'rejected' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{i.title}</h4>
-                        {/* Etichette di stato */}
                         {status === 'pending' && <span className="bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">In approvazione</span>}
                         {status === 'rejected' && <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">Rifiutata</span>}
                       </div>
@@ -405,7 +541,6 @@ export default function App() {
                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Postato da: <span className={status === 'rejected' ? 'text-red-500' : 'text-yellow-600'}>{i.authorName}</span></span>
                       </div>
 
-                      {/* Tasti esclusivi per l'Admin quando un'idea è "pending" */}
                       {isAdmin && status === 'pending' && (
                         <div className="mt-4 pt-4 border-t border-gray-100 flex gap-3">
                           <button onClick={() => handleApproveIdea(i.id)} className="flex-1 py-2 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-colors">Apprezza e Pubblica</button>
