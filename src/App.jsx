@@ -9,7 +9,7 @@ import {
   ChevronRight, Trophy, School, GraduationCap, KeyRound, 
   BookOpen, Calendar, MapPin, Users, CheckCircle
 } from 'lucide-react';
-import Auth from './components/Auth';
+import Auth from './components/Auth'; // Assicurati che il percorso combaci
 
 const GiglioIcon = ({ className = "w-6 h-6" }) => (
   <svg viewBox="0 0 100 100" className={`${className} text-violet-600 fill-current`}>
@@ -24,6 +24,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState('dashboard');
   
+  const [needsVerification, setNeedsVerification] = useState(false);
   const [needsProfile, setNeedsProfile] = useState(false);
   const [profileData, setProfileData] = useState({ nome: '', cognome: '', classe: '' });
   
@@ -45,9 +46,21 @@ export default function App() {
     return onAuthStateChanged(auth, async (u) => {
       setLoading(true);
       if (u) {
+        // Controllo se l'email è verificata
+        if (!u.emailVerified) {
+          setUser(u);
+          setNeedsVerification(true);
+          setLoading(false);
+          return;
+        }
+        
+        // Utente verificato
+        setNeedsVerification(false);
         setUser(u);
+        
         const adminDoc = await getDoc(doc(db, 'admins', u.email.toLowerCase().trim()));
         const isAdminUser = adminDoc.exists();
+        console.log("Controllo Admin... Email:", u.email, "| Sei Admin?", isAdminUser);
         setIsAdmin(isAdminUser);
 
         if (!isAdminUser) {
@@ -179,6 +192,22 @@ export default function App() {
 
   if (!user) return <Auth />;
 
+  if (needsVerification) {
+    return (
+      <div className="min-h-screen bg-[#f8f9ff] flex items-center justify-center p-6">
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md bg-white rounded-[40px] p-10 shadow-2xl text-center border border-violet-100">
+          <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center text-red-500 mx-auto mb-6"><ShieldCheck className="w-8 h-8" /></div>
+          <h2 className="text-3xl font-black uppercase text-gray-900 mb-2">Verifica l'Email!</h2>
+          <p className="text-gray-500 font-medium text-sm mb-8">Abbiamo inviato un link a <strong className="text-violet-600">{user.email}</strong>. Cliccalo per sbloccare l'accesso al Rodolico Hub.</p>
+          <button onClick={() => window.location.reload()} className="w-full py-5 bg-violet-600 text-white rounded-[24px] font-black uppercase tracking-widest shadow-xl shadow-violet-200 hover:bg-violet-700 transition-all mb-4">
+            Ho cliccato, fammi entrare
+          </button>
+          <button onClick={() => signOut(auth)} className="text-[10px] font-black text-red-400 uppercase tracking-widest">Esci e usa un altro account</button>
+        </motion.div>
+      </div>
+    );
+  }
+
   if (needsProfile && !isAdmin) {
     return (
       <div className="min-h-screen bg-[#f8f9ff] flex items-center justify-center p-6">
@@ -248,7 +277,6 @@ export default function App() {
               <h3 className="text-2xl font-black text-gray-900 uppercase">Sportelli</h3>
             </motion.div>
 
-            {/* SEZIONI IN ARRIVO RIPRISTINATE */}
             {[
               { title: 'Tornei Scolastici', icon: Trophy, color: 'bg-rose-500' },
               { title: 'Dentro la Scuola', icon: School, color: 'bg-blue-500' },
@@ -376,7 +404,6 @@ export default function App() {
 
                 <div className="grid gap-6">
                   {sportelli.length === 0 ? <p className="text-center text-gray-400 font-bold mt-10">Nessuno sportello disponibile al momento.</p> : sportelli.map(s => {
-                    
                     const isBooked = s.prenotazioni?.some(p => p.uid === user.uid);
                     const isFull = (s.prenotazioni?.length || 0) >= s.maxStudenti;
                     const bookingData = s.prenotazioni?.find(p => p.uid === user.uid);
@@ -429,7 +456,7 @@ export default function App() {
                         {bookingSportelloId === s.id && !isBooked && (
                           <div className="bg-gray-50 p-6 rounded-2xl mt-4 border border-emerald-200">
                             <label className="block text-sm font-black text-gray-900 uppercase mb-2">Su cosa hai difficoltà?</label>
-                            <p className="text-xs text-gray-500 font-medium mb-3">Spiega brevemente al professore l'argomento (es. "Analisi logica" o "Non ho capito le derivate").</p>
+                            <p className="text-xs text-gray-500 font-medium mb-3">Spiega brevemente al professore l'argomento.</p>
                             <textarea autoFocus value={bookingNote} onChange={(e) => setBookingNote(e.target.value)} placeholder="Scrivi qui l'argomento..." className="w-full p-4 bg-white rounded-xl border border-gray-200 focus:border-emerald-500 outline-none min-h-[100px] mb-4" />
                             <div className="flex gap-3">
                               <button onClick={() => handleBookSportello(s.id)} className="flex-1 py-3 bg-emerald-500 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-600 transition-colors">Conferma Prenotazione</button>
@@ -448,35 +475,62 @@ export default function App() {
         )}
 
         {currentView === 'bacheca' && (
-          <div className="max-w-4xl mx-auto space-y-8">
-            <div className="flex justify-between items-center">
-              <h2 className="text-3xl font-black uppercase text-gray-900">Bacheca</h2>
-              {isAdmin && <button onClick={() => setShowForm(!showForm)} className="px-6 py-3 bg-violet-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest">{showForm ? 'Annulla' : '+ Nuovo Avviso'}</button>}
+          <div className="max-w-5xl mx-auto space-y-8">
+            <div className="flex justify-between items-center bg-white p-6 rounded-3xl shadow-sm border border-violet-50">
+              <div>
+                <h2 className="text-3xl font-black uppercase text-gray-900 flex items-center gap-3">
+                  <Bell className="w-8 h-8 text-violet-600" /> Bacheca
+                </h2>
+                <p className="text-xs text-gray-400 font-bold uppercase mt-1 tracking-widest">Avvisi, Eventi e Circolari</p>
+              </div>
+              {isAdmin && <button onClick={() => setShowForm(!showForm)} className="px-6 py-3 bg-violet-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-violet-700 transition-colors shadow-lg shadow-violet-200">{showForm ? 'Annulla' : '+ Nuovo Avviso'}</button>}
             </div>
+
             {isAdmin && showForm && (
-              <form onSubmit={submitNotice} className="bg-white p-8 rounded-[32px] shadow-xl border-l-8 border-violet-600 space-y-4">
-                <div className="flex gap-4">
-                  <select value={newNotice.category} onChange={e => setNewNotice({...newNotice, category: e.target.value})} className="p-4 bg-gray-50 rounded-xl font-black text-violet-600 uppercase text-xs">
+              <motion.form initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} onSubmit={submitNotice} className="bg-white p-8 rounded-[32px] shadow-xl border-t-8 border-violet-600 space-y-4">
+                <div className="flex flex-col md:flex-row gap-4">
+                  <select value={newNotice.category} onChange={e => setNewNotice({...newNotice, category: e.target.value})} className="p-4 bg-gray-50 rounded-xl font-black text-violet-600 uppercase text-xs outline-none focus:ring-2 focus:ring-violet-200">
                     <option>Circolare</option><option>Evento</option><option>Importante</option>
                   </select>
-                  <input type="text" required placeholder="Titolo dell'avviso" value={newNotice.title} onChange={e => setNewNotice({...newNotice, title: e.target.value})} className="flex-1 p-4 bg-gray-50 rounded-xl font-bold" />
+                  <input type="text" required placeholder="Titolo dell'avviso" value={newNotice.title} onChange={e => setNewNotice({...newNotice, title: e.target.value})} className="flex-1 p-4 bg-gray-50 rounded-xl font-bold outline-none focus:ring-2 focus:ring-violet-200" />
                 </div>
-                <textarea required placeholder="Scrivi il testo dell'avviso..." value={newNotice.content} onChange={e => setNewNotice({...newNotice, content: e.target.value})} className="w-full p-4 bg-gray-50 rounded-xl min-h-[150px]" />
-                <button type="submit" className="w-full py-4 bg-violet-600 text-white rounded-xl font-black uppercase tracking-widest shadow-lg">Pubblica in Bacheca</button>
-              </form>
+                <textarea required placeholder="Scrivi il testo dell'avviso..." value={newNotice.content} onChange={e => setNewNotice({...newNotice, content: e.target.value})} className="w-full p-4 bg-gray-50 rounded-xl min-h-[150px] outline-none focus:ring-2 focus:ring-violet-200" />
+                <button type="submit" className="w-full py-4 bg-violet-600 text-white rounded-xl font-black uppercase tracking-widest shadow-lg hover:bg-violet-700 transition-colors">Pubblica in Bacheca</button>
+              </motion.form>
             )}
-            <div className="space-y-6">
-              {notices.map(n => (
-                <div key={n.id} className="bg-white p-8 rounded-[32px] shadow-sm border border-gray-100 relative overflow-hidden group">
-                  <div className={`absolute left-0 top-0 h-full w-2 ${n.category === 'Importante' ? 'bg-red-500' : n.category === 'Evento' ? 'bg-emerald-500' : 'bg-violet-600'}`}></div>
-                  <div className="flex items-center gap-3 mb-3">
-                    <span className="text-[10px] font-black uppercase bg-gray-100 px-3 py-1 rounded-full text-gray-500 tracking-widest">{n.category}</span>
-                    <span className="text-[10px] font-bold text-gray-300 uppercase">{n.createdAt?.toDate().toLocaleDateString()}</span>
-                  </div>
-                  <h3 className="text-2xl font-black uppercase text-gray-900 mb-2">{n.title}</h3>
-                  <p className="text-gray-600 leading-relaxed whitespace-pre-wrap">{n.content}</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {notices.map(n => {
+                const isUrgent = n.category === 'Importante';
+                const isEvent = n.category === 'Evento';
+                
+                return (
+                  <motion.div whileHover={{ y: -3 }} key={n.id} className="bg-white p-8 rounded-[32px] shadow-sm border border-gray-100 relative overflow-hidden group hover:shadow-xl transition-all flex flex-col justify-between">
+                    <div className={`absolute top-0 left-0 w-full h-2 ${isUrgent ? 'bg-red-500' : isEvent ? 'bg-emerald-500' : 'bg-violet-600'}`}></div>
+                    
+                    <div>
+                      <div className="flex items-center justify-between mb-4 mt-2">
+                        <span className={`text-[10px] font-black uppercase px-3 py-1.5 rounded-full tracking-widest flex items-center gap-1 ${isUrgent ? 'bg-red-50 text-red-600' : isEvent ? 'bg-emerald-50 text-emerald-600' : 'bg-violet-50 text-violet-600'}`}>
+                          {isUrgent ? <ShieldCheck className="w-3 h-3" /> : isEvent ? <Calendar className="w-3 h-3" /> : <BookOpen className="w-3 h-3" />}
+                          {n.category}
+                        </span>
+                        <span className="text-[10px] font-bold text-gray-400 uppercase bg-gray-50 px-3 py-1.5 rounded-full">
+                          {n.createdAt?.toDate().toLocaleDateString('it-IT')}
+                        </span>
+                      </div>
+                      
+                      <h3 className="text-xl font-black uppercase text-gray-900 mb-3 leading-tight">{n.title}</h3>
+                      <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap">{n.content}</p>
+                    </div>
+                  </motion.div>
+                );
+              })}
+              {notices.length === 0 && (
+                <div className="col-span-full text-center py-12 bg-white rounded-[32px] border border-dashed border-gray-200">
+                  <Bell className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-400 font-bold uppercase tracking-widest">Nessun avviso in bacheca.</p>
                 </div>
-              ))}
+              )}
             </div>
           </div>
         )}
